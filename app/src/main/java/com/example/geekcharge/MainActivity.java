@@ -5,6 +5,7 @@ import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -12,8 +13,12 @@ import android.webkit.WebView;
 import android.webkit.WebChromeClient;
 import android.webkit.WebViewClient;
 import android.webkit.WebSettings;
+import android.widget.FrameLayout;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import java.util.Random;
-
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -69,6 +74,89 @@ public class MainActivity extends AppCompatActivity {
         mWebChromeClient = client;
     }
 
+    private class MyChrome extends WebChromeClient {
+
+        private View mCustomView;
+        private WebChromeClient.CustomViewCallback mCustomViewCallback;
+        protected FrameLayout mFullscreenContainer;
+        private int mOriginalOrientation;
+        private int mOriginalSystemUiVisibility;
+
+        MyChrome() {}
+
+        public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams) {
+            if (mUMA != null) {
+                mUMA.onReceiveValue(null);
+            }
+            mUMA = filePathCallback;
+            Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            if (takePictureIntent.resolveActivity(MainActivity.this.getPackageManager()) != null) {
+                File photoFile = null;
+                try {
+                    photoFile = createImageFile();
+                    takePictureIntent.putExtra("PhotoPath", mCM);
+                } catch (IOException ex) {
+                    Log.e("Webview", "Image file creation failed", ex);
+                }
+                if (photoFile != null) {
+                    mCM = "file:" + photoFile.getAbsolutePath();
+                    takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(photoFile));
+                } else {
+                    takePictureIntent = null;
+                }
+            }
+
+            Intent contentSelectionIntent = new Intent(Intent.ACTION_GET_CONTENT);
+            contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE);
+            contentSelectionIntent.setType("*/*");
+            Intent[] intentArray;
+            if (takePictureIntent != null) {
+                intentArray = new Intent[]{takePictureIntent};
+            } else {
+                intentArray = new Intent[0];
+            }
+
+            Intent chooserIntent = new Intent(Intent.ACTION_CHOOSER);
+            chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent);
+            chooserIntent.putExtra(Intent.EXTRA_TITLE, "Image Chooser");
+            chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, intentArray);
+            startActivityForResult(chooserIntent, FCR);
+            return true;
+        }
+
+        public Bitmap getDefaultVideoPoster()
+        {
+            if (mCustomView == null) {
+                return null;
+            }
+            return BitmapFactory.decodeResource(getApplicationContext().getResources(), 2130837573);
+        }
+
+        public void onHideCustomView()
+        {
+            ((FrameLayout)getWindow().getDecorView()).removeView(this.mCustomView);
+            this.mCustomView = null;
+            getWindow().getDecorView().setSystemUiVisibility(this.mOriginalSystemUiVisibility);
+            setRequestedOrientation(this.mOriginalOrientation);
+            this.mCustomViewCallback.onCustomViewHidden();
+            this.mCustomViewCallback = null;
+        }
+
+        public void onShowCustomView(View paramView, WebChromeClient.CustomViewCallback paramCustomViewCallback)
+        {
+            if (this.mCustomView != null)
+            {
+                onHideCustomView();
+                return;
+            }
+            this.mCustomView = paramView;
+            this.mOriginalSystemUiVisibility = getWindow().getDecorView().getSystemUiVisibility();
+            this.mOriginalOrientation = getRequestedOrientation();
+            this.mCustomViewCallback = paramCustomViewCallback;
+            ((FrameLayout)getWindow().getDecorView()).addView(this.mCustomView, new FrameLayout.LayoutParams(-1, -1));
+            getWindow().getDecorView().setSystemUiVisibility(3846);
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -80,10 +168,13 @@ public class MainActivity extends AppCompatActivity {
 
         String url = "https://geekcharge.firebaseapp.com/";
         WebView view = (WebView) this.findViewById(R.id.webView);
+
+
+        view.setWebViewClient(new WebViewClient());
+        view.setWebChromeClient(new MyChrome());
+
         WebSettings webSettings = view.getSettings();
 
-        view.setWebChromeClient(new WebChromeClient());
-        view.setWebViewClient(new WebViewClient());
         view.getSettings().setJavaScriptEnabled(true);
         view.getSettings().setSupportMultipleWindows(true);
         view.getSettings().setAllowFileAccess(true);
@@ -92,47 +183,52 @@ public class MainActivity extends AppCompatActivity {
         view.getSettings().setJavaScriptCanOpenWindowsAutomatically(true);
         view.getSettings().setDomStorageEnabled(true);
         view.getSettings().setUserAgentString(USER_AGENT_FAKE);
-        view.setWebChromeClient(new WebChromeClient() {
-            public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams) {
-                if (mUMA != null) {
-                    mUMA.onReceiveValue(null);
-                }
-                mUMA = filePathCallback;
-                Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-                if (takePictureIntent.resolveActivity(MainActivity.this.getPackageManager()) != null) {
-                    File photoFile = null;
-                    try {
-                        photoFile = createImageFile();
-                        takePictureIntent.putExtra("PhotoPath", mCM);
-                    } catch (IOException ex) {
-                        Log.e("Webview", "Image file creation failed", ex);
-                    }
-                    if (photoFile != null) {
-                        mCM = "file:" + photoFile.getAbsolutePath();
-                        takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(photoFile));
-                    } else {
-                        takePictureIntent = null;
-                    }
-                }
-
-                Intent contentSelectionIntent = new Intent(Intent.ACTION_GET_CONTENT);
-                contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE);
-                contentSelectionIntent.setType("*/*");
-                Intent[] intentArray;
-                if (takePictureIntent != null) {
-                    intentArray = new Intent[]{takePictureIntent};
-                } else {
-                    intentArray = new Intent[0];
-                }
-
-                Intent chooserIntent = new Intent(Intent.ACTION_CHOOSER);
-                chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent);
-                chooserIntent.putExtra(Intent.EXTRA_TITLE, "Image Chooser");
-                chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, intentArray);
-                startActivityForResult(chooserIntent, FCR);
-                return true;
-            }
-        });
+//        view.setWebChromeClient(new WebChromeClient() {
+//
+//
+//
+//
+//
+//            public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams) {
+//                if (mUMA != null) {
+//                    mUMA.onReceiveValue(null);
+//                }
+//                mUMA = filePathCallback;
+//                Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+//                if (takePictureIntent.resolveActivity(MainActivity.this.getPackageManager()) != null) {
+//                    File photoFile = null;
+//                    try {
+//                        photoFile = createImageFile();
+//                        takePictureIntent.putExtra("PhotoPath", mCM);
+//                    } catch (IOException ex) {
+//                        Log.e("Webview", "Image file creation failed", ex);
+//                    }
+//                    if (photoFile != null) {
+//                        mCM = "file:" + photoFile.getAbsolutePath();
+//                        takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(photoFile));
+//                    } else {
+//                        takePictureIntent = null;
+//                    }
+//                }
+//
+//                Intent contentSelectionIntent = new Intent(Intent.ACTION_GET_CONTENT);
+//                contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE);
+//                contentSelectionIntent.setType("*/*");
+//                Intent[] intentArray;
+//                if (takePictureIntent != null) {
+//                    intentArray = new Intent[]{takePictureIntent};
+//                } else {
+//                    intentArray = new Intent[0];
+//                }
+//
+//                Intent chooserIntent = new Intent(Intent.ACTION_CHOOSER);
+//                chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent);
+//                chooserIntent.putExtra(Intent.EXTRA_TITLE, "Image Chooser");
+//                chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, intentArray);
+//                startActivityForResult(chooserIntent, FCR);
+//                return true;
+//            }
+//        });
 
         Random randomz = new Random();
 
@@ -178,6 +274,29 @@ public class MainActivity extends AppCompatActivity {
 
 
     @Override
+    public void onBackPressed() {
+        //Do something here
+        AlertDialog.Builder alert = new AlertDialog.Builder(this);
+        alert.setTitle("Do you want to close the app?");
+
+        alert.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
+
+            public void onClick(DialogInterface dialog, int whichButton) {
+                finish();
+            }
+        });
+
+        alert.setNegativeButton("Cancel",
+            new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface dialog, int whichButton) {
+                    dialog.cancel();
+                }
+        });
+
+        alert.show();
+    }
+
+    @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
         super.onActivityResult(requestCode, resultCode, intent);
         if (Build.VERSION.SDK_INT >= 21) {
@@ -220,7 +339,5 @@ public class MainActivity extends AppCompatActivity {
         File storageDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
         return File.createTempFile(imageFileName, ".jpg", storageDir);
     }
-
-
 
 }
